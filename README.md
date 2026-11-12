@@ -17,7 +17,7 @@ A live view of **Claude Code agents and subagents** inside VS Code. It shows who
 1. Download `agent-process-tracker-<version>.vsix` from [Releases](https://github.com/doyeonryu/agent-process-tracker/releases).
 2. Install it:
    ```sh
-   code --install-extension agent-process-tracker-0.1.3.vsix
+   code --install-extension agent-process-tracker-0.1.4.vsix
    ```
    Or in VS Code: Extensions view → `…` → **Install from VSIX…**
 
@@ -27,7 +27,7 @@ Open a folder you use Claude Code in, then run any of these:
 
 - the tracker button in the editor title bar (top right of any editor)
 - `Ctrl+Alt+A` (`Cmd+Alt+A` on macOS)
-- Command Palette → **Agent Tracker: Open**
+- Command Palette → **Agent Tracker**
 - From anywhere, including a Claude Code slash command: `code --open-url "vscode://doyeonryu.agent-process-tracker/open"`
 
 The panel opens beside your editor and follows the newest Claude Code session for that workspace. Each VS Code window tracks its own workspace. To look at an older session, use the session dropdown in the header, or run **Agent Tracker: Pick Session…**. Turn **Follow latest** off to stay on one session.

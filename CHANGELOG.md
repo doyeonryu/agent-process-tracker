@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- The title-bar button and Command Palette entry are now named "Agent Tracker" (tooltip: `Agent Tracker (Ctrl+Alt+A)` instead of `Open`).
+
 ## 0.1.3
 
 - Publisher/author is now `doyeonryu` (extension id `doyeonryu.agent-process-tracker`; open URI `vscode://doyeonryu.agent-process-tracker/open`).
