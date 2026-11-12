@@ -2,7 +2,7 @@
   "name": "agent-process-tracker",
   "displayName": "Agent Process Tracker",
   "description": "Live view of Claude Code agents and subagents: who delegated what, what each one is doing, what it is waiting on, and what it reported back.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "dcel",
   "license": "MIT",
   "repository": {
@@ -37,7 +37,10 @@
         "command": "agentTracker.open",
         "title": "Open",
         "category": "Agent Tracker",
-        "icon": "$(type-hierarchy)"
+        "icon": {
+          "light": "media/icon.svg",
+          "dark": "media/icon.svg"
+        }
       },
       {
         "command": "agentTracker.pickSession",
@@ -45,6 +48,14 @@
         "category": "Agent Tracker"
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "agentTracker.open",
+          "group": "navigation@100"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "agentTracker.open",

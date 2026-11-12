@@ -17,7 +17,7 @@ VS Code 안에서 **Claude Code의 에이전트와 서브에이전트**가 일�
 1. [Releases](https://github.com/doyeonryu/agent-process-tracker/releases)에서 `agent-process-tracker-<버전>.vsix`를 내려받습니다.
 2. 설치합니다.
    ```sh
-   code --install-extension agent-process-tracker-0.1.1.vsix
+   code --install-extension agent-process-tracker-0.1.2.vsix
    ```
    VS Code에서 설치하려면 확장 탭 → `…` → **Install from VSIX…**를 선택합니다.
 
@@ -25,6 +25,7 @@ VS Code 안에서 **Claude Code의 에이전트와 서브에이전트**가 일�
 
 Claude Code를 쓰는 작업 폴더를 VS Code로 연 다음, 아래 중 하나를 실행합니다.
 
+- 에디터 오른쪽 위 제목 표시줄의 트래커 버튼
 - `Ctrl+Alt+A` (macOS는 `Cmd+Alt+A`)
 - 명령 팔레트 → **Agent Tracker: Open**
 - 어디서든 실행 가능한 명령(Claude Code 슬래시 명령 포함): `code --open-url "vscode://dcel.agent-process-tracker/open"`

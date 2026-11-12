@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Tracker button in the editor title bar (next to other AI tools' buttons) opens the panel with one click.
+
 ## 0.1.1
 
 - WSL support: a Windows VS Code window now also finds sessions of Claude Code running inside WSL
