@@ -1,5 +1,7 @@
 # Agent Process Tracker
 
+**English** | [한국어](README.ko.md)
+
 A live view of **Claude Code agents and subagents** inside VS Code. It shows who delegated what, what each agent is doing now, what it is waiting on, and what it reported back.
 
 - **Tree of agents**: the main conversation sits on top, subagents branch below it, and siblings sit side by side.
@@ -15,7 +17,7 @@ A live view of **Claude Code agents and subagents** inside VS Code. It shows who
 1. Download `agent-process-tracker-<version>.vsix` from [Releases](https://github.com/doyeonryu/agent-process-tracker/releases).
 2. Install it:
    ```sh
-   code --install-extension agent-process-tracker-0.1.0.vsix
+   code --install-extension agent-process-tracker-0.1.1.vsix
    ```
    Or in VS Code: Extensions view → `…` → **Install from VSIX…**
 
