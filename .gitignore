@@ -1,0 +1,8 @@
+node_modules/
+*.vsix
+.vscode-test/
+# never commit real Claude Code transcripts
+*.jsonl
+!test/fixtures/*.jsonl
+.DS_Store
+Thumbs.db

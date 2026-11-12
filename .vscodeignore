@@ -1,0 +1,6 @@
+test/**
+.vscode/**
+.github/**
+.gitignore
+*.vsix
+**/*.jsonl

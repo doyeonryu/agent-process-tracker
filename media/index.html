@@ -1,0 +1,1026 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Tracker</title>
+<style>
+:root{
+  --bg:#f6f5f2; --dot:#e2dfd8; --panel:#ffffff; --block:#ffffff; --border:#dedad2;
+  --text:#1f1e1c; --muted:#8a867e; --faint:#c3bfb6;
+  --claude:#d97757; --claude-glow:rgba(217,119,87,.35); --claude-ring:rgba(217,119,87,.18);
+  --ok:#3f9460; --err:#d0503c; --wait:#c08a1a; --appr:#8b5cd6; --appr-glow:rgba(139,92,214,.35);
+  --k-prompt:#d97757; --k-result:#3f9460; --k-msg:#4f74d9;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 2px 8px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#141312; --dot:#24221f; --panel:#1b1a18; --block:#211f1d; --border:#35322e;
+    --text:#ece9e3; --muted:#9a958c; --faint:#4f4b45;
+    --claude-glow:rgba(217,119,87,.45); --claude-ring:rgba(217,119,87,.22);
+    --ok:#5cb37c; --wait:#e0ad45; --appr:#a98bf0; --appr-glow:rgba(169,139,240,.4);
+    --k-result:#5cb37c; --k-msg:#7d9bf0; --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141312; --dot:#24221f; --panel:#1b1a18; --block:#211f1d; --border:#35322e;
+  --text:#ece9e3; --muted:#9a958c; --faint:#4f4b45;
+  --claude-glow:rgba(217,119,87,.45); --claude-ring:rgba(217,119,87,.22);
+  --ok:#5cb37c; --wait:#e0ad45; --appr:#a98bf0; --appr-glow:rgba(169,139,240,.4);
+  --k-result:#5cb37c; --k-msg:#7d9bf0; --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;display:flex;flex-direction:column;background:var(--bg);color:var(--text);
+  font:13px/1.4 system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif;overflow:hidden}
+body.paused *, body.paused *::before, body.paused *::after{animation-play-state:paused !important}
+
+/* header */
+header{display:flex;align-items:center;gap:8px 10px;padding:8px 16px;border-bottom:1px solid var(--border);
+  background:var(--panel);flex-wrap:wrap;z-index:4}
+.brand{font-weight:650;letter-spacing:-.01em}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--border);
+  border-radius:999px;color:var(--muted);font-size:12px;white-space:nowrap}
+.chip .sw{width:8px;height:8px;border-radius:2px;background:var(--claude)}
+.cdot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+#conn.down{border-color:var(--err);color:var(--err)}
+#conn.down .cdot{background:var(--err);animation:blink .8s infinite}
+.stats{display:flex;gap:10px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.stats b{color:var(--text);font-weight:600}
+.stats .appr b{color:var(--appr)}
+.spacer{flex:1}
+.group{display:flex;align-items:center;gap:6px}
+.group small{color:var(--muted);font-size:11px}
+button{font:inherit;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text);
+  border-radius:6px;padding:4px 10px;cursor:pointer;white-space:nowrap}
+button:hover{background:var(--dot)}
+button.on{border-color:var(--claude);color:var(--claude)}
+.seg{display:inline-flex}
+.seg button{border-radius:0}
+.seg button:first-child{border-radius:6px 0 0 6px}
+.seg button:last-child{border-radius:0 6px 6px 0;border-left:none}
+#zoomLbl{min-width:40px;text-align:center;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+
+/* layout */
+main{flex:1;display:flex;min-height:0;position:relative}
+#center{flex:1;display:flex;flex-direction:column;min-width:0}
+#vp{flex:1;position:relative;overflow:hidden;cursor:grab;touch-action:none;min-height:0;
+  background-image:radial-gradient(var(--dot) 1.2px,transparent 1.2px);background-size:22px 22px}
+#vp.drag{cursor:grabbing}
+#world{position:absolute;left:0;top:0;transform-origin:0 0}
+#edges{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
+.hint{position:absolute;left:16px;bottom:10px;color:var(--muted);font-size:12px;pointer-events:none;
+  background:var(--bg);padding:2px 6px;border-radius:4px}
+.float{position:absolute;left:50%;transform:translateX(-50%);z-index:3;display:none;
+  padding:6px 12px;border-radius:999px;font-size:12px;box-shadow:var(--shadow);white-space:nowrap}
+.float.show{display:block}
+#banner{top:12px;background:var(--panel);border:1px solid var(--border)}
+#banner b{color:var(--claude)}
+#offs{bottom:12px;background:var(--claude);color:#fff;cursor:pointer;border:none}
+
+/* blocks */
+.block{position:absolute;left:0;top:0;width:210px;height:88px;padding:8px 10px 8px 14px;
+  background:var(--block);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);
+  cursor:pointer;user-select:none;overflow:hidden;transition:border-color .3s,opacity .4s}
+.block::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--claude)}
+.block::after{content:"";position:absolute;inset:0;background:var(--claude);opacity:0;pointer-events:none}
+.block.flash::after{animation:flash .7s ease-out}
+.block.running{border-color:var(--claude);animation:pulse 1.6s ease-in-out infinite}
+.block.waiting{border-color:var(--wait);border-style:dashed}
+.block.waiting::before{background:var(--wait)}
+.block.approval{border-color:var(--appr);animation:pulseAppr 1.2s ease-in-out infinite}
+.block.approval::before{background:var(--appr)}
+.block.done{opacity:.55}
+.block.done::before{background:var(--faint)}
+.block.error{border-color:var(--err)}
+.block.error::before{background:var(--err)}
+.block.idle::before{background:var(--k-result)}
+.idle .st{background:var(--k-result)}
+select{font:inherit;font-size:12px;background:var(--panel);color:var(--text);border:1px solid var(--border);
+  border-radius:6px;padding:3px 6px;max-width:280px}
+body.live .mock-only{display:none !important}
+body:not(.live) .live-only{display:none !important}
+#emptyMsg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;
+  padding:24px;color:var(--muted);font-size:13px;z-index:2;pointer-events:none}
+#emptyMsg.show{display:flex}
+#emptyMsg div{max-width:440px}
+.block.sel{outline:2px solid var(--k-msg);outline-offset:3px;opacity:1}
+.block.hl{outline:2px dashed var(--k-msg);outline-offset:3px;opacity:1}
+.hd{display:flex;align-items:center;gap:6px}
+.st{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.running .st{background:var(--claude);animation:blink 1s infinite}
+.waiting .st{background:var(--wait)}
+.approval .st{background:var(--appr);animation:blink .7s infinite}
+.done .st{background:var(--ok)}
+.error .st{background:var(--err)}
+.title{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.time{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.more{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:0 4px}
+.line{margin-top:4px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.line .sl{font-weight:600;margin-right:4px}
+.running .line{color:var(--muted);font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+.waiting .sl{color:var(--wait)} .approval .sl{color:var(--appr)} .error .line{color:var(--err)}
+.meta{margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.block.stale .meta{color:var(--err);font-weight:600}
+.lod .line,.lod .meta,.lod .time,.lod .more{display:none}
+.lod .hd{font-size:24px;height:100%}
+.lod .st{width:18px;height:18px}
+
+@keyframes pulse{
+  0%,100%{box-shadow:0 0 0 0 transparent,var(--shadow)}
+  50%{box-shadow:0 0 0 4px var(--claude-ring),0 0 20px var(--claude-glow)}
+}
+@keyframes pulseAppr{
+  0%,100%{box-shadow:0 0 0 0 transparent,var(--shadow)}
+  50%{box-shadow:0 0 0 5px var(--appr-glow),0 0 22px var(--appr-glow)}
+}
+@keyframes flash{0%{opacity:.22}100%{opacity:0}}
+@keyframes blink{50%{opacity:.35}}
+
+/* lines */
+.edge{fill:none;stroke:var(--faint);stroke-width:1.5}
+.edge.active{stroke:var(--claude);stroke-opacity:.55;stroke-dasharray:6 6;animation:flow .8s linear infinite}
+.edge.err{stroke:var(--err)}
+.dep{fill:none;stroke:var(--wait);stroke-width:2;stroke-dasharray:1 6;stroke-linecap:round}
+.dep.confirmed{stroke-dasharray:8 5}
+.deplabel{font:600 11.5px system-ui,"Segoe UI","Malgun Gothic",sans-serif;fill:var(--wait);
+  paint-order:stroke;stroke:var(--bg);stroke-width:5px;stroke-linejoin:round}
+.rel{fill:none;stroke:var(--k-msg);stroke-width:1.5;stroke-opacity:.5}
+.arrow{fill:none;stroke-width:2.5;stroke-dasharray:5 6;animation:flow2 .45s linear infinite}
+.arrow.k-prompt{stroke:var(--k-prompt)} .arrow.k-result{stroke:var(--k-result)} .arrow.k-msg{stroke:var(--k-msg)}
+.adot.k-prompt{fill:var(--k-prompt)} .adot.k-result{fill:var(--k-result)} .adot.k-msg{fill:var(--k-msg)}
+.alabel{font:600 11.5px system-ui,"Segoe UI","Malgun Gothic",sans-serif;
+  paint-order:stroke;stroke:var(--bg);stroke-width:5px;stroke-linejoin:round}
+.alabel.k-prompt{fill:var(--k-prompt)} .alabel.k-result{fill:var(--k-result)} .alabel.k-msg{fill:var(--k-msg)}
+@keyframes flow{to{stroke-dashoffset:-12}}
+@keyframes flow2{to{stroke-dashoffset:-11}}
+
+/* badges */
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:0 6px;border-radius:4px;color:#fff;
+  text-align:center;white-space:nowrap;line-height:18px}
+.badge.k-prompt{background:var(--k-prompt)} .badge.k-result{background:var(--k-result)}
+.badge.k-msg{background:var(--k-msg)} .badge.k-wait{background:var(--wait)} .badge.k-appr{background:var(--appr)}
+.tag{display:inline-block;font-size:10.5px;border:1px solid var(--border);border-radius:3px;padding:0 4px;
+  color:var(--muted);margin-right:6px;line-height:15px}
+.tag.inf{border-style:dashed;color:var(--wait);border-color:var(--wait)}
+
+/* bottom log */
+#log{height:210px;flex:none;border-top:1px solid var(--border);background:var(--panel);display:flex;flex-direction:column}
+#log.collapsed{height:auto}
+#log.collapsed #logRows{display:none}
+.lh{display:flex;align-items:center;gap:10px;padding:6px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.lh b{font-size:12px}
+.legend{display:flex;gap:6px;flex:1;flex-wrap:wrap}
+#logRows{flex:1;overflow:auto;padding:4px 0}
+.row{display:grid;grid-template-columns:36px 54px minmax(0,auto) minmax(0,1fr);gap:4px 10px;align-items:center;
+  padding:4px 16px;cursor:pointer;font-size:12.5px}
+.row:hover{background:var(--dot)}
+.row em{font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
+.route{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.route b{font-weight:600}
+.route i{font-style:normal;color:var(--muted);margin:0 4px}
+.txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.txt .re{color:var(--muted)}
+.full{display:none;grid-column:2/-1;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  padding:6px 9px;white-space:pre-wrap;font-size:12px;margin:2px 0 4px}
+.full .src{display:block;margin-top:4px;color:var(--muted);font-size:11px}
+.row.open .full{display:block}
+.row.open{background:var(--dot)}
+#logRows.focus .row{opacity:.3;transition:opacity .2s}
+#logRows.focus .row.mine{opacity:1;box-shadow:inset 3px 0 0 var(--k-msg)}
+.empty{color:var(--muted);font-size:12px;padding:6px 16px}
+
+/* detail panel */
+#detail{width:380px;flex:none;border-left:1px solid var(--border);background:var(--panel);
+  overflow:auto;padding:14px 16px;display:none}
+#detail.open{display:block}
+.dhd{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px}
+.dhd div{flex:1}
+.dhd b{font-size:15px;display:block}
+.dhd small{color:var(--muted)}
+.kv{display:grid;grid-template-columns:64px 1fr;gap:4px 8px;font-size:12px;margin-bottom:6px}
+.kv>span:nth-child(odd){color:var(--muted)}
+.sec{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 6px}
+.box{white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px}
+.box.why{border-color:var(--wait)}
+.box.why.appr{border-color:var(--appr)}
+.who{color:var(--k-msg);cursor:pointer;font-weight:600}
+.who:hover{text-decoration:underline}
+.peer{display:inline-flex;align-items:center;gap:4px;margin:0 8px 4px 0}
+.list{list-style:none;margin:0;padding:0;font:12px ui-monospace,Consolas,monospace}
+.list li{padding:3px 0;border-bottom:1px dashed var(--border);display:flex;gap:8px}
+.list li em{font-style:normal;color:var(--muted);flex:none;width:38px}
+.note{font-size:12px;color:var(--muted);margin-top:4px}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:0 8px;border-radius:999px;border:1px solid currentColor;margin-top:6px}
+.pill.running{color:var(--claude)} .pill.waiting{color:var(--wait)} .pill.approval{color:var(--appr)}
+.pill.done{color:var(--ok)} .pill.error{color:var(--err)} .pill.idle{color:var(--k-result)}
+/* Task → Goal → Process → Result */
+.steps{position:relative;margin-top:16px}
+.steps::before{content:"";position:absolute;left:10px;top:14px;bottom:14px;width:2px;background:var(--border)}
+.step{position:relative;padding-left:34px;margin-bottom:20px}
+.step .num{position:absolute;left:0;top:0;width:22px;height:22px;border-radius:50%;color:#fff;
+  font:700 11px/22px system-ui,sans-serif;text-align:center;background:var(--muted);box-shadow:0 0 0 3px var(--panel)}
+.s-task .num{background:var(--k-prompt)} .s-goal .num{background:var(--text);color:var(--panel)}
+.s-proc .num{background:var(--claude)} .s-res .num{background:var(--k-result)} .s-res.fail .num{background:var(--err)}
+.s-res.pending .num{background:var(--faint)}
+.step h4{margin:2px 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.step h4 small{text-transform:none;letter-spacing:0;color:var(--muted);font-weight:400;font-size:12px}
+.goal{font-size:15px;font-weight:650;line-height:1.35}
+.box.task{border-left:3px solid var(--k-prompt);font-size:12.5px}
+.box.res{border-left:3px solid var(--k-result);font-size:12.5px}
+.s-res.fail .box.res{border-left-color:var(--err)}
+.box.pending{border-style:dashed;color:var(--muted)}
+.tl{list-style:none;margin:0;padding:0}
+.tl li{position:relative;padding:3px 0 3px 16px;font-size:12px;display:flex;gap:8px}
+.tl li::before{content:"";position:absolute;left:2px;top:9px;width:7px;height:7px;border-radius:50%;background:var(--faint)}
+.tl li em{font-style:normal;color:var(--muted);flex:none;width:32px;font-variant-numeric:tabular-nums}
+.tl li span{min-width:0;overflow-wrap:anywhere}
+.tl code{font:600 11.5px ui-monospace,Consolas,monospace}
+.tl .tool::before{background:var(--muted)}
+.tl .spawn::before{background:var(--k-prompt)} .tl .childres::before{background:var(--k-result)}
+.tl .msgout::before,.tl .msgin::before{background:var(--k-msg)}
+.tl .wait::before{background:var(--wait)} .tl .resume::before{background:var(--ok)}
+.tl .turn::before{background:var(--k-prompt)}
+.tl .now{font-weight:600}
+.tl .now::before{background:var(--claude);animation:blink 1s infinite}
+.tl .lbl{color:var(--muted);margin-right:4px}
+details.info{border-top:1px solid var(--border);padding-top:10px}
+details.info summary{cursor:pointer;color:var(--muted);font-size:12px;margin-bottom:8px}
+@media (max-width:700px){
+  #detail{position:absolute;inset:0 0 0 auto;width:100%;z-index:5}
+  .hint{display:none}
+  .row{grid-template-columns:54px minmax(0,1fr)}
+  .row em,.row .txt{display:none}
+  .full{grid-column:1/-1}
+}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">Agent Tracker</span>
+  <span class="chip" id="sessChip"><span class="sw"></span>Claude · demo session</span>
+  <span class="chip" id="conn"><span class="cdot"></span><span id="connTxt">Connected</span></span>
+  <span class="stats" id="stats"></span>
+  <span class="spacer"></span>
+  <span class="group">
+    <span class="seg"><button id="fAll" class="on">All</button><button id="fActive">Active only</button></span>
+    <button id="btnCollapse">Collapse done</button>
+    <button id="btnFit" title="F">⤢ Fit</button>
+    <span id="zoomLbl">100%</span>
+  </span>
+  <span class="group live-only">
+    <select id="selSession" title="Session"></select>
+    <button id="btnFollow" class="on" title="Switch to the newest session automatically">Follow latest</button>
+  </span>
+  <span class="group mock-only">
+    <small>Demo</small>
+    <button id="btnPause" title="Freezes screen updates only. Claude keeps running.">⏸ Freeze view</button>
+    <button id="btnSpeed">1×</button>
+    <button id="btnRestart" title="Restart">↺</button>
+    <button id="btnStress" title="Spawn 6 siblings">+6</button>
+    <button id="btnDrop">Drop test</button>
+  </span>
+</header>
+<main>
+  <div id="center">
+    <div id="vp">
+      <div id="world">
+        <svg id="edges">
+          <defs>
+            <marker id="ah-prompt" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--k-prompt)"/></marker>
+            <marker id="ah-result" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--k-result)"/></marker>
+            <marker id="ah-msg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--k-msg)"/></marker>
+            <marker id="ah-wait" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--wait)"/></marker>
+          </defs>
+          <g id="gEdges"></g>
+          <g id="gRel"></g>
+          <g id="gDeps"></g>
+          <g id="gArrows"></g>
+        </svg>
+      </div>
+      <div id="emptyMsg"><div id="emptyTxt"></div></div>
+      <div class="float" id="banner"></div>
+      <button class="float" id="offs"></button>
+      <div class="hint">Ctrl+scroll zoom · Shift+scroll pan · drag to move · F fit</div>
+    </div>
+    <section id="log">
+      <div class="lh">
+        <b>Conversation log</b>
+        <span class="legend">
+          <span class="badge k-prompt">Task</span>
+          <span class="badge k-result">Result</span>
+          <span class="badge k-msg">Message</span>
+          <span class="badge k-wait">Waiting</span>
+          <span class="badge k-appr">Approval</span>
+          <span class="tag">confirmed</span><span class="tag inf">inferred</span>
+        </span>
+        <button id="btnLog">Collapse</button>
+      </div>
+      <div id="logRows"></div>
+    </section>
+  </div>
+  <aside id="detail"></aside>
+</main>
+
+<script>
+/* ---------- fake event stream (would come from Claude transcript JSONL / hooks) ---------- */
+const BASE = [
+  {t:.2, ev:'start', id:'main', type:'Main', desc:'로그인 테스트 + API 설계', model:'claude-opus-5-5',
+   prompt:'로그인 기능에 테스트 추가하고, API 설계도 정리해줘'},
+  {t:1.0, ev:'tool', id:'main', name:'Read', arg:'src/app.ts', tok:1800},
+  {t:1.8, ev:'tool', id:'main', name:'Grep', arg:'"auth"', tok:600},
+  {t:2.6, ev:'tool', id:'main', name:'Agent', arg:'×3', tok:300},
+  {t:3.0, ev:'start', id:'e1', parent:'main', type:'Explore', desc:'인증 코드 조사', model:'claude-haiku-5-5',
+   prompt:'인증 관련 코드(login, session, token)를 전부 찾아서 파일 경로와 핵심 함수를 보고해줘.'},
+  {t:3.2, ev:'start', id:'p1', parent:'main', type:'Plan', desc:'로그인 API 설계', model:'claude-opus-5-5',
+   prompt:'login / logout / refresh REST 엔드포인트를 설계해줘. 에러 코드도 정해줘.'},
+  {t:3.4, ev:'start', id:'g1', parent:'main', type:'general-purpose', desc:'로그인 테스트 작성', model:'claude-sonnet-5-5',
+   prompt:'test/login.test.ts 에 로그인 흐름 유닛 테스트를 작성해줘.'},
+  {t:3.5, ev:'wait', id:'main', on:'children'},
+  {t:4.2, ev:'tool', id:'e1', name:'Glob', arg:'src/**/auth*', tok:400},
+  {t:4.6, ev:'tool', id:'p1', name:'Read', arg:'docs/api.md', tok:2200},
+  {t:5.1, ev:'tool', id:'g1', name:'Read', arg:'test/login.test.ts', tok:1500},
+  {t:5.8, ev:'tool', id:'e1', name:'Agent', arg:'×2', tok:200},
+  {t:6.1, ev:'start', id:'e2', parent:'e1', type:'Explore', desc:'API 핸들러 조사', model:'claude-haiku-5-5',
+   prompt:'src/api 에서 로그인 핸들러를 찾아줘.'},
+  {t:6.3, ev:'start', id:'e3', parent:'e1', type:'Explore', desc:'세션 저장소 조사', model:'claude-haiku-5-5',
+   prompt:'src/db 에서 세션 저장소 코드를 찾아줘.'},
+  {t:6.4, ev:'wait', id:'e1', on:'children'},
+  {t:7.0, ev:'tool', id:'e2', name:'Grep', arg:'"router.post"', tok:500},
+  {t:7.4, ev:'tool', id:'e3', name:'Grep', arg:'"session"', tok:500},
+  {t:7.6, ev:'send', from:'p1', to:'g1', text:'스펙 초안 공유: POST /login 은 실패 시 401 을 반환하고, body 는 { error, message } 형식으로 통일.'},
+  {t:8.1, ev:'send', from:'g1', to:'p1', text:'refresh 토큰이 만료됐을 때는 몇 번 코드야? 테스트 케이스에 넣으려고.', reply:true},
+  {t:8.6, ev:'send', from:'p1', to:'g1', text:'만료는 419 로 통일할게. 문서에도 반영함.', reply:true},
+  {t:9.0, ev:'tool', id:'p1', name:'Write', arg:'docs/login-api.md', tok:3100},
+  {t:9.2, ev:'send', from:'g1', to:'e1', text:'세션 저장소 코드 어디 있어? createSession 을 mock 해야 해.'},
+  {t:9.3, ev:'wait', id:'g1', on:'e1', reason:'세션 저장소 위치', inferred:true},
+  {t:9.8, ev:'tool', id:'e2', name:'Read', arg:'src/api/login.ts', tok:1900},
+  {t:10.6, ev:'end', id:'p1', status:'done', summary:'엔드포인트 3개 설계',
+   result:'POST /login, POST /logout, POST /refresh 설계 완료. 실패 401, 토큰 만료 419. docs/login-api.md 작성.', tok:400},
+  {t:11.4, ev:'tool', id:'e3', name:'Read', arg:'src/db/session.ts', tok:1200},
+  {t:12.4, ev:'end', id:'e3', status:'done', summary:'session.ts 발견',
+   result:'세션 저장소는 src/db/session.ts (createSession, revokeSession).'},
+  {t:13.2, ev:'end', id:'e2', status:'done', summary:'핸들러 2개 발견',
+   result:'src/api/login.ts 에 loginHandler, refreshHandler 2개.'},
+  {t:13.3, ev:'resume', id:'e1'},
+  {t:13.5, ev:'send', from:'e1', to:'g1', text:'src/db/session.ts 에 있어. createSession(userId) 형태야.', reply:true},
+  {t:13.6, ev:'resume', id:'g1'},
+  {t:14.0, ev:'tool', id:'g1', name:'Edit', arg:'test/login.test.ts', tok:2600, note:'테스트 3개 작성'},
+  {t:14.6, ev:'resume', id:'main'},
+  {t:14.7, ev:'tool', id:'main', name:'Agent', arg:'×1', tok:200},
+  {t:14.9, ev:'start', id:'w1', parent:'main', type:'general-purpose', desc:'hooks 문서 확인', model:'claude-sonnet-5-5',
+   prompt:'Claude Code hooks 문서를 읽고 SubagentStop 페이로드를 요약해줘.'},
+  {t:15.0, ev:'wait', id:'main', on:'children'},
+  {t:15.3, ev:'end', id:'e1', status:'done', summary:'인증 파일 5개 보고',
+   result:'인증 관련 파일 5개: src/api/login.ts, src/db/session.ts, src/auth/token.ts, src/auth/hash.ts, src/middleware/auth.ts'},
+  {t:15.4, ev:'tool', id:'w1', name:'WebFetch', arg:'docs.claude.com/hooks', tok:300},
+  {t:15.9, ev:'wait', id:'g1', on:'user', reason:'Bash: npm test'},
+  {t:17.4, ev:'resume', id:'g1', note:'approved by user'},
+  {t:17.5, ev:'tool', id:'g1', name:'Bash', arg:'npm test', tok:800},
+  {t:19.0, ev:'end', id:'g1', status:'done', summary:'테스트 6개 통과',
+   result:'test/login.test.ts 에 6개 테스트 추가, 전부 통과. (401 / 419 케이스 포함)', tok:500},
+  {t:25.0, ev:'end', id:'w1', status:'error', summary:'fetch 시간 초과', result:'문서 요청 응답 없음 (10s). 요약 실패.'},
+  {t:25.4, ev:'resume', id:'main'},
+  {t:25.6, ev:'tool', id:'main', name:'Read', arg:'docs/login-api.md', tok:900},
+  {t:26.6, ev:'end', id:'main', status:'done', summary:'응답 완료',
+   result:'테스트 6개 추가(통과), API 설계 문서 작성. hooks 문서 확인은 실패해서 재시도 필요.'},
+];
+
+const KIND = {prompt:'Task', result:'Result', msg:'Message', wait:'Waiting', appr:'Approval'};
+const SRC = {prompt:'Agent tool input', result:'Agent tool return value', msg:'SendMessage tool call', appr:'permission request event'};
+const STATE = {running:'Working', waiting:'Waiting', approval:'Needs approval', done:'Done', error:'Failed', idle:'Idle'};
+const USER = 'user';
+let STALE = 6;   // seconds without activity while working → warn (demo: 6s, live: from settings)
+
+// Live mode inside the VS Code webview; demo mode when the file is opened in a browser.
+const vsc = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+const LIVE = !!vsc;
+if (LIVE) document.body.classList.add('live');
+let epochMs = Date.now(), quiet = false, lastBeat = Date.now(), lastEventMs = 0;
+
+/* ---------- state ---------- */
+const BW = 210, BH = 88, HG = 24, VG = 64;
+const $ = id => document.getElementById(id);
+const vp = $('vp'), world = $('world'), gEdges = $('gEdges'), gArrows = $('gArrows'), gDeps = $('gDeps'), gRel = $('gRel');
+const detail = $('detail'), logRows = $('logRows');
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+let nodes, comms, arrows, script, evIdx, inbox, simT, viewT0, aT, selected, stressN, typeCount, offscreen, fitted;
+let speed = 1, paused = false, connDown = false, connRetry = 0, lastRecv = 0;
+let filterActive = false, collapseDone = false;
+const view = {x:0, y:0, k:1}, viewTgt = {x:0, y:0, k:1};
+let viewAnim = false;
+
+function reset(){
+  nodes = new Map(); comms = []; arrows = []; script = LIVE ? [] : BASE.slice(); evIdx = 0; inbox = [];
+  simT = 0; viewT0 = 0; aT = 0; selected = null; stressN = 0; typeCount = {}; offscreen = new Set(); fitted = false;
+  paused = false; connDown = false; lastRecv = performance.now();
+  document.body.classList.remove('paused');
+  $('btnPause').textContent = '⏸ Freeze view';
+  world.querySelectorAll('.block').forEach(b => b.remove());
+  gEdges.innerHTML = gArrows.innerHTML = gDeps.innerHTML = gRel.innerHTML = '';
+  logRows.innerHTML = '<div class="empty">No communication yet</div>';
+  logRows.classList.remove('focus');
+  detail.classList.remove('open');
+}
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = s => { s = Math.max(0, Math.floor(s)); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); };
+const ago = s => s < 1 ? 'just now' : Math.floor(s) + 's ago';
+const fmtTok = n => n >= 1000 ? (n/1000).toFixed(1) + 'k' : String(n);
+const short = (s, n) => s.length > n ? s.slice(0, n - 1) + '…' : s;
+const nameOf = id => id === USER ? 'User' : (nodes.get(id)?.label ?? id);
+const whoLink = id => id === USER ? '<b>User</b>' : `<a class="who" data-id="${esc(id)}">${esc(nameOf(id))}</a>`;
+const isActive = n => n.status === 'running' || n.status === 'waiting' || n.status === 'approval';
+
+/* ---------- events ---------- */
+function apply(e){
+  const T = e.t;
+  lastRecv = performance.now();
+  if (e.ev === 'start'){
+    if (nodes.has(e.id)) return;
+    const sh = e.type === 'general-purpose' ? 'General' : e.type;
+    typeCount[sh] = (typeCount[sh] || 0) + 1;
+    const label = e.type === 'Main' ? 'Main' : `${sh} #${typeCount[sh]}`;
+    const n = {id:e.id, parent:e.parent, type:e.type, label, desc:e.desc, prompt:e.prompt, model:e.model,
+      status:'running', start:T, end:null, lastAct:T, tools:[], tokens:0, children:[], cur:'starting…',
+      result:null, wait:null, progress:null, hist:[]};
+    const el = document.createElement('div');
+    el.className = 'block running';
+    el.innerHTML = '<div class="hd"><span class="st"></span><span class="title"></span><span class="more"></span><span class="time"></span></div>' +
+                   '<div class="line"></div><div class="meta"></div>';
+    el.addEventListener('pointerdown', ev => ev.stopPropagation());
+    el.addEventListener('click', () => select(n.id));
+    world.appendChild(el);
+    n.el = el;
+    const p = nodes.get(e.parent);
+    if (p){
+      p.children.push(n.id);
+      n.x = p.x; n.y = p.y;
+      n.edge = document.createElementNS(SVGNS, 'path');
+      gEdges.appendChild(n.edge);
+    }
+    nodes.set(n.id, n);
+    relayout();
+    if (!p){ n.x = n.tx; n.y = n.ty; }
+    if (!fitted){ fitted = true; fitView(false); }
+    else if (!quiet && !onScreen(n)) offscreen.add(n.id);
+    if (e.prompt) addComm({kind:'prompt', from:p ? p.id : USER, to:n.id, text:e.prompt, label:e.desc, t:T});
+  } else if (e.ev === 'tool'){
+    const n = nodes.get(e.id); if (!n) return;
+    if (n.status === 'idle'){ n.status = 'running'; n.end = null; n.result = null; }   // e.g. woken by a subagent's result
+    n.tools.push({t:T - n.start, name:e.name, arg:e.arg});
+    n.cur = '▸ ' + e.name + ' ' + e.arg; n.tokens += e.tok || 0; n.lastAct = T;
+    if (e.note) n.progress = e.note;
+    flash(n);
+  } else if (e.ev === 'wait'){
+    const n = nodes.get(e.id); if (!n) return;
+    n.wait = {on:e.on, reason:e.reason, inferred:!!e.inferred, since:T};
+    n.status = e.on === USER ? 'approval' : 'waiting';
+    n.hist.push({t:T - n.start, kind:'wait', inferred:!!e.inferred,
+      text:e.on === 'children' ? 'Waiting on subtasks' : e.on === USER ? `Needs approval · ${e.reason}` : `Waiting for ${nameOf(e.on)} · ${e.reason}`});
+    if (e.on === USER) addComm({kind:'appr', from:n.id, to:USER, text:e.reason, label:e.reason, inferred:e.inferred, t:T});
+    else if (e.on !== 'children') addComm({kind:'wait', from:n.id, to:e.on, text:`${e.reason} — waiting for ${nameOf(e.on)}`, label:e.reason, inferred:e.inferred, t:T});
+  } else if (e.ev === 'resume'){
+    const n = nodes.get(e.id); if (!n) return;
+    n.wait = null; n.status = 'running'; n.lastAct = T;
+    n.hist.push({t:T - n.start, kind:'resume', text:e.note ? `Resumed · ${e.note}` : 'Resumed'});
+    if (e.note) n.cur = '▸ ' + e.note;
+  } else if (e.ev === 'end'){
+    const n = nodes.get(e.id); if (!n) return;
+    n.status = e.status; n.end = T; n.lastAct = T; n.result = e.result; n.wait = null;
+    n.cur = (e.status === 'error' ? '✕ ' : '✓ ') + e.summary;
+    n.tokens += e.tok || 0;
+    relayout();
+    addComm({kind:'result', from:n.id, to:n.parent && nodes.has(n.parent) ? n.parent : USER, text:e.result, label:e.summary, t:T});
+  } else if (e.ev === 'send'){
+    if (!nodes.has(e.from) || !nodes.has(e.to)) return;
+    nodes.get(e.from).lastAct = T;
+    addComm({kind:'msg', from:e.from, to:e.to, text:e.text, label:e.text, reply:!!e.reply, t:T});
+  } else if (e.ev === 'title'){
+    const n = nodes.get(e.id); if (n) n.desc = e.desc;
+  } else if (e.ev === 'act'){
+    const n = nodes.get(e.id); if (n) n.lastAct = Math.max(n.lastAct, T);
+  } else if (e.ev === 'meta'){
+    const n = nodes.get(e.id); if (!n) return;
+    if (e.model) n.model = e.model;
+    n.tokens += e.tok || 0;
+  } else if (e.ev === 'turn'){
+    const n = nodes.get(e.id); if (!n) return;
+    n.status = 'running'; n.prompt = e.text; n.result = null; n.end = null; n.wait = null; n.lastAct = T; n.cur = '▸ thinking…';
+    n.hist.push({t:T - n.start, kind:'turn', text:'New prompt from User · ' + short(e.text, 60)});
+    addComm({kind:'prompt', from:USER, to:n.id, text:e.text, label:e.text, t:T});
+  } else if (e.ev === 'idle'){
+    const n = nodes.get(e.id); if (!n) return;
+    n.status = 'idle'; n.result = e.result; n.end = T; n.wait = null; n.lastAct = T; n.cur = '✓ ' + e.summary;
+    n.hist.push({t:T - n.start, kind:'resume', text:'Turn complete · waiting for User'});
+    addComm({kind:'result', from:n.id, to:USER, text:e.result, label:e.summary, t:T});
+  }
+  for (const id of [e.id, e.from, e.to]) if (nodes.has(id)) updateCard(nodes.get(id));
+  if (selected && [e.id, e.from, e.to, nodes.get(e.id)?.parent].includes(selected)) renderDetail();
+}
+
+function addComm(c){
+  c.i = comms.length; comms.push(c);
+  if (c.kind === 'prompt' || c.kind === 'result' || c.kind === 'msg') spawnArrow(c);
+  appendLogRow(c);
+}
+
+function flash(n){ if (quiet) return; n.el.classList.remove('flash'); void n.el.offsetWidth; n.el.classList.add('flash'); }
+
+/* ---------- card ---------- */
+function statusLine(n){
+  const w = n.wait;
+  if (n.status === 'waiting' && w){
+    if (w.on === 'children'){
+      const kids = n.children.map(id => nodes.get(id)), left = kids.filter(isActive).length;
+      return `<span class="sl">Waiting on subtasks</span>${left}/${kids.length} left`;
+    }
+    return `<span class="sl">Waiting</span>${esc(nameOf(w.on))} · ${esc(w.reason)}${w.inferred ? ' (inferred)' : ''}`;
+  }
+  if (n.status === 'approval') return `<span class="sl">${w.inferred ? 'Running or awaiting approval' : 'Needs approval'}</span>${esc(w.reason)}`;
+  return esc(n.cur);
+}
+function nowT(){ return paused ? viewT0 : simT; }
+function updateCard(n){
+  const T = nowT(), idle = T - n.lastAct;
+  const stale = n.status === 'running' && idle > STALE;
+  const cl = n.el.classList;
+  cl.remove('running', 'waiting', 'approval', 'done', 'error', 'idle');
+  cl.add(n.status);
+  cl.toggle('stale', stale);
+  cl.toggle('sel', selected === n.id);
+  n.el.querySelector('.title').textContent = n.desc;
+  n.el.querySelector('.time').textContent = fmt((n.end ?? T) - n.start);
+  n.el.querySelector('.line').innerHTML = statusLine(n);
+  const more = n.el.querySelector('.more');
+  more.textContent = n.collapsedN ? '+' + n.collapsedN : '';
+  more.style.display = n.collapsedN ? '' : 'none';
+  let meta = n.label;
+  if (isActive(n)) meta += stale ? ` · ⚠ idle ${Math.floor(idle)}s` : ` · last active ${ago(idle)}`;
+  else meta += n.status === 'idle' ? ' · waiting for you' : n.status === 'done' ? ' · result reported' : ' · failure reported';
+  if (n.progress && isActive(n)) meta += ' · ' + n.progress;
+  n.el.querySelector('.meta').textContent = meta;
+  if (n.edge) n.edge.setAttribute('class', 'edge' + (isActive(n) ? ' active' : n.status === 'error' ? ' err' : ''));
+}
+
+/* ---------- arrows ---------- */
+function spawnArrow(c){
+  if (quiet) return;
+  const s = nodes.get(c.from), t = nodes.get(c.to);
+  if (!s || !t || s.hidden || t.hidden) return;
+  const path = document.createElementNS(SVGNS, 'path');
+  path.setAttribute('class', 'arrow k-' + c.kind);
+  path.setAttribute('marker-end', `url(#ah-${c.kind})`);
+  const dot = document.createElementNS(SVGNS, 'circle');
+  dot.setAttribute('class', 'adot k-' + c.kind); dot.setAttribute('r', 5);
+  const label = document.createElementNS(SVGNS, 'text');
+  label.setAttribute('class', 'alabel k-' + c.kind); label.setAttribute('text-anchor', 'middle');
+  label.textContent = `${KIND[c.kind]}: ${short(c.label, 22)}`;
+  gArrows.append(path, dot, label);
+  arrows.push({c, born:aT, path, dot, label});
+  flash(s); flash(t);
+}
+function arcTop(s, t){
+  const sx = s.x + BW/2, sy = s.y, tx = t.x + BW/2, ty = t.y, top = Math.min(sy, ty) - 48;
+  return `M${sx},${sy} C${sx},${top} ${tx},${top} ${tx},${ty - 2}`;
+}
+function arrowGeom(c){
+  const s = nodes.get(c.from), t = nodes.get(c.to);
+  if (c.kind === 'msg') return {d:arcTop(s, t), at:.5, dy:-8};
+  const p = c.kind === 'prompt' ? s : t, ch = c.kind === 'prompt' ? t : s;
+  const ax = p.x + BW/2 + 8, ay = p.y + BH, bx = ch.x + BW/2 + 8, by = ch.y, my = (ay + by) / 2;
+  return c.kind === 'prompt'
+    ? {d:`M${ax},${ay} C${ax},${my} ${bx},${my} ${bx},${by - 2}`, at:.78, dy:-4}
+    : {d:`M${bx},${by} C${bx},${my} ${ax},${my} ${ax},${ay + 2}`, at:.22, dy:-4};
+}
+
+/* persistent lines: waiting dependencies (always) + selected agent's message partners */
+function drawPersistent(){
+  let html = '';
+  for (const n of nodes.values()){
+    const w = n.wait;
+    if (!w || w.on === USER || w.on === 'children' || n.hidden) continue;
+    const t = nodes.get(w.on); if (!t || t.hidden) continue;
+    const sx = n.x + BW/2 - 20, sy = n.y + BH, tx = t.x + BW/2 - 20, ty = t.y + BH, bot = Math.max(sy, ty) + 36;
+    html += `<path class="dep${w.inferred ? '' : ' confirmed'}" marker-end="url(#ah-wait)" d="M${sx},${sy} C${sx},${bot} ${tx},${bot} ${tx},${ty + 3}"/>`;
+    html += `<text class="deplabel" text-anchor="middle" x="${(sx + tx) / 2}" y="${bot - 4}">⏳ ${esc(n.label)} waiting${w.inferred ? ' (inferred)' : ''}</text>`;
+  }
+  gDeps.innerHTML = html;
+  let rel = '';
+  if (selected && nodes.has(selected)){
+    const peers = new Set();
+    for (const c of comms) if (c.kind === 'msg'){
+      if (c.from === selected) peers.add(c.to); else if (c.to === selected) peers.add(c.from);
+    }
+    const s = nodes.get(selected);
+    for (const id of peers){ const t = nodes.get(id); if (t && !t.hidden && !s.hidden) rel += `<path class="rel" d="${arcTop(s, t)}"/>`; }
+  }
+  gRel.innerHTML = rel;
+}
+
+/* ---------- bottom log ---------- */
+function appendLogRow(c){
+  const empty = logRows.querySelector('.empty'); if (empty) empty.remove();
+  const atBottom = logRows.scrollTop + logRows.clientHeight >= logRows.scrollHeight - 4;
+  const row = document.createElement('div');
+  row.className = 'row' + (selected && (c.from === selected || c.to === selected) ? ' mine' : '');
+  row.dataset.from = c.from; row.dataset.to = c.to;
+  const tag = c.inferred ? '<span class="tag inf">inferred</span>' : '<span class="tag">confirmed</span>';
+  const src = c.inferred ? (c.kind === 'appr' ? 'Inferred: the tool call has no result yet (still running, or waiting for your approval)'
+                                              : 'Inferred: no tool calls since the question was sent') : `Source: ${SRC[c.kind] ?? 'event'} (seen directly in transcript)`;
+  row.innerHTML = `<em>${fmt(c.t)}</em><span class="badge k-${c.kind}">${KIND[c.kind]}</span>
+    <span class="route"><b>${esc(nameOf(c.from))}</b><i>→</i><b>${esc(nameOf(c.to))}</b></span>
+    <span class="txt">${tag}${c.reply ? '<span class="re">↳ reply · </span>' : ''}${esc(c.text)}</span>
+    <div class="full">${esc(c.text)}<span class="src">${src}</span></div>`;
+  row.addEventListener('mouseenter', () => highlight(c, true));
+  row.addEventListener('mouseleave', () => highlight(c, false));
+  row.addEventListener('click', () => {
+    row.classList.toggle('open');
+    if (row.classList.contains('open') && (c.kind === 'prompt' || c.kind === 'result' || c.kind === 'msg')) spawnArrow(c);
+  });
+  logRows.appendChild(row);
+  if (atBottom) logRows.scrollTop = logRows.scrollHeight;
+}
+function highlight(c, on){ for (const id of [c.from, c.to]) nodes.get(id)?.el.classList.toggle('hl', on); }
+$('btnLog').onclick = e => {
+  const log = $('log'); log.classList.toggle('collapsed');
+  e.target.textContent = log.classList.contains('collapsed') ? 'Expand' : 'Collapse';
+};
+
+/* ---------- layout (Main stays anchored; siblings side by side) ---------- */
+const subtreeDone = n => n.status === 'done' && n.children.every(id => subtreeDone(nodes.get(id)));
+const countDesc = n => n.children.reduce((a, id) => a + 1 + countDesc(nodes.get(id)), 0);
+function shownKids(n){
+  if (collapseDone && n.children.length && subtreeDone(n)) return [];
+  return n.children.map(id => nodes.get(id)).filter(c => !(filterActive && subtreeDone(c)));
+}
+function relayout(){
+  for (const n of nodes.values()) n.hidden = true;
+  const roots = [...nodes.values()].filter(n => !nodes.has(n.parent));
+  let x = 0;
+  for (const r of roots){ markShown(r); measure(r); place(r, x, 0); x += r.w + HG * 2; }
+  if (roots.length){ const dx = -roots[0].tx; for (const n of nodes.values()) n.tx += dx; }
+  for (const n of nodes.values()){
+    n.collapsedN = collapseDone && n.children.length && subtreeDone(n) ? countDesc(n) : 0;
+    n.el.style.display = n.hidden ? 'none' : '';
+    if (n.edge) n.edge.style.display = n.hidden ? 'none' : '';
+    if (n.hidden) offscreen.delete(n.id);
+    updateCard(n);
+  }
+}
+function markShown(n){ n.hidden = false; shownKids(n).forEach(markShown); }
+function measure(n){
+  const kids = shownKids(n); kids.forEach(measure);
+  n.sw = kids.reduce((a, c) => a + c.w, 0) + HG * Math.max(0, kids.length - 1);
+  n.w = Math.max(BW, n.sw);
+}
+function place(n, x0, d){
+  n.tx = x0 + (n.w - BW) / 2; n.ty = d * (BH + VG);
+  let x = x0 + (n.w - n.sw) / 2;
+  for (const c of shownKids(n)){ place(c, x, d + 1); x += c.w + HG; }
+}
+
+/* ---------- view ---------- */
+function onScreen(n){
+  const sx = view.x + n.tx * view.k, sy = view.y + n.ty * view.k;
+  return sx + BW * view.k > 0 && sx < vp.clientWidth && sy + BH * view.k > 0 && sy < vp.clientHeight;
+}
+function fitView(animate){
+  const shown = [...nodes.values()].filter(n => !n.hidden); if (!shown.length) return;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of shown){ x0 = Math.min(x0, n.tx); y0 = Math.min(y0, n.ty); x1 = Math.max(x1, n.tx + BW); y1 = Math.max(y1, n.ty + BH); }
+  const pad = 60, vw = vp.clientWidth, vh = vp.clientHeight, w = x1 - x0, h = y1 - y0;
+  const k = Math.max(.15, Math.min((vw - pad*2) / w, (vh - pad*2) / h, 1.1));
+  viewTgt.k = k; viewTgt.x = (vw - w * k) / 2 - x0 * k; viewTgt.y = Math.max(pad, (vh - h * k) / 2) - y0 * k;
+  if (animate) viewAnim = true; else Object.assign(view, viewTgt);
+  offscreen.clear();
+}
+function zoomAt(mx, my, f){
+  const k2 = Math.min(2.5, Math.max(.15, view.k * f));
+  view.x = mx - (mx - view.x) * (k2 / view.k);
+  view.y = my - (my - view.y) * (k2 / view.k);
+  view.k = k2;
+}
+vp.addEventListener('wheel', e => {
+  e.preventDefault(); viewAnim = false;
+  const r = vp.getBoundingClientRect();
+  if (e.ctrlKey) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0018));
+  else if (e.shiftKey) view.x -= (e.deltaY || e.deltaX);
+  else { view.x -= e.deltaX; view.y -= e.deltaY; }
+}, {passive:false});
+let drag = null;
+vp.addEventListener('pointerdown', e => {
+  if (e.target.closest('.float')) return;
+  drag = {x:e.clientX, y:e.clientY}; vp.classList.add('drag'); vp.setPointerCapture(e.pointerId);
+});
+vp.addEventListener('pointermove', e => {
+  if (!drag) return;
+  viewAnim = false; view.x += e.clientX - drag.x; view.y += e.clientY - drag.y;
+  drag = {x:e.clientX, y:e.clientY};
+});
+vp.addEventListener('pointerup', () => { drag = null; vp.classList.remove('drag'); });
+window.addEventListener('keydown', e => {
+  if (e.key === 'f' || e.key === 'F') fitView(true);
+  if (e.key === 'Escape') select(null);
+});
+$('btnFit').onclick = () => fitView(true);
+$('offs').onclick = () => fitView(true);
+
+/* ---------- filters ---------- */
+$('fAll').onclick = () => { filterActive = false; $('fAll').classList.add('on'); $('fActive').classList.remove('on'); relayout(); };
+$('fActive').onclick = () => { filterActive = true; $('fActive').classList.add('on'); $('fAll').classList.remove('on'); relayout(); };
+$('btnCollapse').onclick = () => { collapseDone = !collapseDone; $('btnCollapse').classList.toggle('on', collapseDone); relayout(); };
+
+/* ---------- detail panel ---------- */
+function select(id){
+  const prev = nodes.get(selected); selected = nodes.has(id) ? id : null;
+  if (prev) updateCard(prev);
+  const n = nodes.get(selected);
+  if (n){ updateCard(n); renderDetail(); detail.classList.add('open'); } else detail.classList.remove('open');
+  logRows.classList.toggle('focus', !!n);
+  let first = null;
+  for (const row of logRows.querySelectorAll('.row')){
+    const mine = !!n && (row.dataset.from === selected || row.dataset.to === selected);
+    row.classList.toggle('mine', mine);
+    if (mine && !first) first = row;
+  }
+  if (first) first.scrollIntoView({block:'nearest', behavior:'smooth'});
+}
+let detailsOpen = false;
+detail.addEventListener('toggle', e => { if (e.target.matches('details.info')) detailsOpen = e.target.open; }, true);
+detail.addEventListener('click', e => {
+  const a = e.target.closest('.who'); if (a) select(a.dataset.id);
+  if (e.target.id === 'dClose') select(null);
+});
+function peerList(list, side){
+  const m = new Map();
+  for (const c of list){
+    if (c.kind === 'wait' || c.kind === 'appr') continue;
+    const other = side === 'in' ? c.from : c.to;
+    if (!m.has(other)) m.set(other, new Set());
+    m.get(other).add(c.kind);
+  }
+  if (!m.size) return '<span style="color:var(--muted)">none</span>';
+  return [...m].map(([id, ks]) =>
+    `<span class="peer">${whoLink(id)} ${[...ks].map(k => `<span class="badge k-${k}">${KIND[k]}</span>`).join('')}</span>`).join('');
+}
+function whyBlock(n){
+  const T = nowT(), w = n.wait;
+  if (n.status === 'approval')
+    return w.inferred
+      ? `<div class="box why appr"><b>Tool running or awaiting your approval</b> <span class="tag inf">inferred</span>\n${esc(w.reason)}\nNo result for ${fmt(T - w.since)}</div>`
+      : `<div class="box why appr"><b>Waiting for user approval</b>\n${esc(w.reason)}\nWaiting for ${fmt(T - w.since)}</div>`;
+  if (n.status === 'waiting' && w.on === 'children'){
+    const left = n.children.map(id => nodes.get(id)).filter(isActive);
+    return `<div class="box why"><b>Waiting on subtask results</b>\nRemaining: ${left.map(c => whoLink(c.id)).join(', ') || 'none'}</div>`;
+  }
+  if (n.status === 'waiting')
+    return `<div class="box why"><b>Waiting for ${whoLink(w.on)}</b>${w.inferred ? ' <span class="tag inf">inferred</span>' : ''}\n${esc(w.reason)} · waiting for ${fmt(T - w.since)}</div>`;
+  if (n.status === 'running' && T - n.lastAct > STALE)
+    return `<div class="box why" style="border-color:var(--err)"><b>⚠ No activity for ${Math.floor(T - n.lastAct)}s</b>\nLast: ${esc(n.cur)}</div>`;
+  return '';
+}
+function renderDetail(){
+  const n = nodes.get(selected); if (!n) return;
+  const p = nodes.get(n.parent), T = nowT();
+  const mine = comms.filter(c => c.from === n.id || c.to === n.id);
+  const waiters = [...nodes.values()].filter(o => o.wait && o.wait.on === n.id);
+  const from = p ? whoLink(p.id) : 'User';
+
+  // one merged timeline for the Process step
+  const items = [
+    ...n.tools.filter(x => x.name !== 'Agent').map(x => ({t:x.t, cls:'tool', html:`<code>${esc(x.name)}</code> ${esc(x.arg)}`})),
+    ...n.hist.map(h => ({t:h.t, cls:h.kind, html:esc(h.text) + (h.inferred ? ' <span class="tag inf">inferred</span>' : '')})),
+  ];
+  for (const c of mine){
+    const t = c.t - n.start;
+    if (c.kind === 'prompt' && c.from === n.id) items.push({t, cls:'spawn', html:`<span class="lbl">Spawned</span>${whoLink(c.to)} · ${esc(c.label)}`});
+    else if (c.kind === 'result' && c.to === n.id) items.push({t, cls:'childres', html:`<span class="lbl">Result from</span>${whoLink(c.from)} · ${esc(c.text)}`});
+    else if (c.kind === 'msg' && c.from === n.id) items.push({t, cls:'msgout', html:`<span class="lbl">→</span>${whoLink(c.to)} ${esc(c.text)}`});
+    else if (c.kind === 'msg') items.push({t, cls:'msgin', html:`<span class="lbl">←</span>${whoLink(c.from)} ${esc(c.text)}`});
+  }
+  items.sort((a, b) => a.t - b.t);
+  const totalSteps = items.length;
+  if (items.length > 300) items.splice(0, items.length - 300);   // long sessions: keep the latest steps
+  if (isActive(n)) items.push({t:T - n.start, cls:'now', html:'Now · ' + statusLine(n).replace(/<[^>]+>/g, ' ').trim()});
+  const tl = (totalSteps > 300 ? `<div class="note">${totalSteps - 300} earlier steps not shown</div>` : '') +
+    (items.length ? '<ul class="tl">' + items.map(i => `<li class="${i.cls}"><em>${fmt(i.t)}</em><span>${i.html}</span></li>`).join('') + '</ul>'
+                          : '<div class="note">No activity yet</div>');
+
+  const resCls = n.status === 'error' ? ' fail' : n.result ? '' : ' pending';
+  const scroll = detail.scrollTop;
+  detail.innerHTML =
+    `<div class="dhd"><div><b>${esc(n.desc)}</b><small>${esc(n.label)} · ${esc(n.type)}</small><br>
+       <span class="pill ${n.status}">${STATE[n.status]} · ${fmt((n.end ?? T) - n.start)}</span></div><button id="dClose">✕</button></div>
+     ${whyBlock(n)}
+     <div class="steps">
+       <div class="step s-task"><span class="num">1</span>
+         <h4>Task <small>from ${from} · ${fmt(0)}</small></h4>
+         <div class="box task">${esc(n.prompt)}</div>
+       </div>
+       <div class="step s-goal"><span class="num">2</span>
+         <h4>Goal</h4>
+         <div class="goal">${esc(n.desc)}</div>
+         <div class="note">${p ? `Part of ${whoLink(p.id)}'s task · ${esc(p.desc)}` : 'Requested directly by User'}</div>
+       </div>
+       <div class="step s-proc"><span class="num">3</span>
+         <h4>Process <small>${items.length} steps</small></h4>
+         ${tl}
+       </div>
+       <div class="step s-res${resCls}"><span class="num">4</span>
+         <h4>Result ${n.result ? `<small>→ sent to ${from} · ${fmt(n.end - n.start)}</small>` : ''}</h4>
+         ${n.result ? `<div class="box res">${esc(n.result)}</div>` : '<div class="box pending">In progress — not reported yet</div>'}
+       </div>
+     </div>
+     <details class="info"${detailsOpen ? ' open' : ''}><summary>Details</summary>
+       <div class="kv">
+         <span>Last active</span><span>${isActive(n) ? ago(T - n.lastAct) : '—'}</span>
+         <span>Model</span><span>${esc(n.model)}</span>
+         <span>Tokens</span><span>${fmtTok(n.tokens)}</span>
+         <span>Parent</span><span>${from}</span>
+         <span>Children</span><span>${n.children.length ? n.children.map(whoLink).join(', ') : '—'}</span>
+         ${waiters.length ? `<span>Waited on by</span><span>${waiters.map(o => whoLink(o.id)).join(', ')}</span>` : ''}
+         <span>Received ←</span><span>${peerList(mine.filter(c => c.to === n.id), 'in')}</span>
+         <span>Sent →</span><span>${peerList(mine.filter(c => c.from === n.id), 'out')}</span>
+       </div>
+       <div class="note">Full messages are highlighted in the log below (${mine.length})</div>
+     </details>`;
+  detail.scrollTop = scroll;
+}
+
+/* ---------- mock controls ---------- */
+$('btnPause').onclick = () => {
+  paused = !paused;
+  if (paused) viewT0 = simT;
+  document.body.classList.toggle('paused', paused);
+  $('btnPause').textContent = paused ? '▶ Resume view' : '⏸ Freeze view';
+};
+$('btnSpeed').onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 4 : 1; $('btnSpeed').textContent = speed + '×'; };
+$('btnRestart').onclick = reset;
+$('btnDrop').onclick = () => { connDown = true; connRetry = 0; setTimeout(() => { connDown = false; }, 4500); };
+$('btnStress').onclick = () => {
+  if (!nodes.has('main') || !isActive(nodes.get('main'))) return;
+  const kinds = ['Explore', 'general-purpose', 'Plan'];
+  const files = ['src/ui', 'src/api', 'src/db', 'lib/util', 'test/e2e', 'scripts', 'docs'];
+  const add = [];
+  for (let i = 0; i < 6; i++){
+    const id = 's' + (++stressN), t0 = simT + i * 0.15, f = files[(stressN + i) % files.length];
+    add.push({t:t0, ev:'start', id, parent:'main', type:kinds[i % 3], desc:f + ' 조사', model:'claude-haiku-5-5', prompt:f + ' 를 훑어보고 보고해줘.'},
+             {t:t0 + 1 + Math.random(), ev:'tool', id, name:'Glob', arg:f + '/**', tok:300},
+             {t:t0 + 2.2 + Math.random() * 2, ev:'tool', id, name:'Read', arg:f + '/index.ts', tok:1200},
+             {t:t0 + 4.5 + Math.random() * 3, ev:'end', id, status:'done', summary:'특이사항 없음', result:f + ' 확인 완료, 특이사항 없음.'});
+  }
+  script = script.slice(0, evIdx).concat(script.slice(evIdx).concat(add).sort((a, b) => a.t - b.t));
+};
+
+/* ---------- main loop ---------- */
+const TRAVEL = 1300, LIFE = 3800, FADE = 700;
+let last = performance.now(), lastTick = 0;
+function frame(now){
+  const dt = Math.min(100, now - last) / 1000; last = now;
+
+  // "server side": Claude keeps running regardless of the screen
+  if (LIVE) simT = (Date.now() - epochMs) / 1000;
+  else {
+    simT += dt * speed;
+    if (!connDown) while (evIdx < script.length && script[evIdx].t <= simT) inbox.push(script[evIdx++]);
+  }
+
+  if (!paused){
+    aT += dt * 1000;
+    while (inbox.length) apply(inbox.shift());
+
+    const a = 1 - Math.pow(0.0005, dt);
+    for (const n of nodes.values()){
+      n.x += (n.tx - n.x) * a; n.y += (n.ty - n.y) * a;
+      n.el.style.transform = `translate(${n.x}px,${n.y}px)`;
+    }
+    if (viewAnim){
+      for (const k of ['x', 'y', 'k']) view[k] += (viewTgt[k] - view[k]) * a;
+      if (Math.abs(viewTgt.k - view.k) < .002 && Math.abs(viewTgt.x - view.x) < .5) viewAnim = false;
+    }
+    for (const n of nodes.values()){
+      if (!n.edge || n.hidden) continue;
+      const p = nodes.get(n.parent);
+      const ax = p.x + BW/2, ay = p.y + BH, bx = n.x + BW/2, by = n.y, my = (ay + by) / 2;
+      n.edge.setAttribute('d', `M${ax},${ay} C${ax},${my} ${bx},${my} ${bx},${by}`);
+    }
+    arrows = arrows.filter(r => {
+      const age = aT - r.born;
+      const s = nodes.get(r.c.from), t = nodes.get(r.c.to);
+      if (age > LIFE || s.hidden || t.hidden){ r.path.remove(); r.dot.remove(); r.label.remove(); return false; }
+      const g = arrowGeom(r.c);
+      r.path.setAttribute('d', g.d);
+      const len = r.path.getTotalLength();
+      const pr = Math.min(1, age / TRAVEL), e = 1 - Math.pow(1 - pr, 3);
+      const pt = r.path.getPointAtLength(len * e), lp = r.path.getPointAtLength(len * g.at);
+      r.dot.setAttribute('cx', pt.x); r.dot.setAttribute('cy', pt.y);
+      r.dot.style.opacity = pr < 1 ? 1 : 0;
+      r.label.setAttribute('x', lp.x); r.label.setAttribute('y', lp.y + g.dy);
+      const op = age > LIFE - FADE ? 1 - (age - (LIFE - FADE)) / FADE : 1;
+      r.path.style.opacity = r.label.style.opacity = op;
+      return true;
+    });
+    drawPersistent();
+  }
+  world.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`;
+  world.classList.toggle('lod', view.k < 0.5);
+
+  if (now - lastTick > 250){
+    lastTick = now;
+    tick(now);
+  }
+  requestAnimationFrame(frame);
+}
+
+function tick(now){
+  if (!paused){
+    for (const n of nodes.values()) updateCard(n);
+    const dI = $('dIdle'), dT = $('dTime'), sn = nodes.get(selected);
+    if (sn && isActive(sn)) renderDetail();
+    else if (sn && dT) dT.textContent = fmt((sn.end ?? simT) - sn.start);
+  }
+  // stats
+  const c = {running:0, waiting:0, approval:0, done:0, error:0, idle:0};
+  for (const n of nodes.values()) c[n.status]++;
+  $('stats').innerHTML = `<span>Working <b>${c.running}</b></span><span>Waiting <b>${c.waiting}</b></span>` +
+    `<span class="appr">Approval <b>${c.approval}</b></span><span>Done <b>${c.done}</b></span><span>Failed <b>${c.error}</b></span>`;
+  $('zoomLbl').textContent = Math.round(view.k * 100) + '%';
+  // connection
+  const conn = $('conn');
+  $('emptyMsg').classList.toggle('show', !nodes.size);
+  if (LIVE){
+    const alive = Date.now() - lastBeat < 6000;
+    conn.classList.toggle('down', !alive);
+    $('connTxt').textContent = !alive ? 'Extension not responding'
+      : lastEventMs ? `Watching · last event ${ago((Date.now() - lastEventMs) / 1000)}` : 'Watching';
+  } else conn.classList.toggle('down', connDown);
+  if (LIVE){ /* handled above */ }
+  else if (connDown){ connRetry++; $('connTxt').textContent = `Disconnected · reconnecting (attempt ${Math.ceil(connRetry / 4)})`; }
+  else $('connTxt').textContent = `Connected · last event ${ago((now - lastRecv) / 1000)}`;
+  // pause banner
+  const b = $('banner');
+  b.classList.toggle('show', paused);
+  if (paused) b.innerHTML = `<b>View frozen</b> · Claude keeps running · ${inbox.length} new events queued`;
+  // off-screen notice
+  for (const id of offscreen){ const n = nodes.get(id); if (!n || n.hidden || onScreen(n)) offscreen.delete(id); }
+  const o = $('offs');
+  o.classList.toggle('show', offscreen.size > 0);
+  o.textContent = `${offscreen.size} new agent${offscreen.size > 1 ? 's' : ''} off-screen · Show`;
+}
+
+/* ---------- live bridge (VS Code extension ⇄ webview) ---------- */
+const relTime = ms => { const s = (Date.now() - ms) / 1000; return s < 60 ? 'now' : s < 3600 ? Math.floor(s / 60) + 'm ago' : s < 86400 ? Math.floor(s / 3600) + 'h ago' : Math.floor(s / 86400) + 'd ago'; };
+function renderSessions(m){
+  const sel = $('selSession');
+  sel.innerHTML = m.sessions.map(s => `<option value="${esc(s.id)}">${esc(short(s.title || s.id, 48))} · ${relTime(s.mtime)}</option>`).join('');
+  if (m.current) sel.value = m.current;
+  $('btnFollow').classList.toggle('on', !!m.follow);
+  const cur = m.sessions.find(s => s.id === m.current);
+  if (cur) $('sessChip').lastChild.textContent = 'Claude · ' + short(cur.title || cur.id, 40);
+}
+if (LIVE){
+  $('emptyTxt').textContent = 'Looking for Claude Code sessions in this workspace…';
+  window.addEventListener('message', ev => {
+    const m = ev.data || {};
+    if (m.type === 'reset'){
+      reset();
+      epochMs = m.epochMs; STALE = m.staleSeconds || 60; lastBeat = Date.now();
+      $('emptyTxt').textContent = 'This session has no activity yet.';
+    } else if (m.type === 'events'){
+      lastBeat = lastEventMs = Date.now();
+      if (m.replay){
+        quiet = true;
+        try { for (const e of m.events) apply(e); } finally { quiet = false; }
+        relayout(); fitView(false);
+      } else inbox.push(...m.events);
+    } else if (m.type === 'heartbeat'){
+      lastBeat = Date.now();
+      if (m.lastEventMs) lastEventMs = m.lastEventMs;
+    } else if (m.type === 'sessions') renderSessions(m);
+    else if (m.type === 'follow') $('btnFollow').classList.toggle('on', !!m.on);
+    else if (m.type === 'empty'){ reset(); $('emptyTxt').textContent = m.message; }
+  });
+  $('selSession').onchange = e => vsc.postMessage({type:'selectSession', id:e.target.value});
+  $('btnFollow').onclick = () => {
+    const on = !$('btnFollow').classList.contains('on');
+    $('btnFollow').classList.toggle('on', on);
+    vsc.postMessage({type:'setFollow', on});
+  };
+  // follow the VS Code colour theme
+  const syncTheme = () => {
+    const b = document.body.classList;
+    document.documentElement.dataset.theme = b.contains('vscode-light') || b.contains('vscode-high-contrast-light') ? 'light' : 'dark';
+  };
+  syncTheme();
+  new MutationObserver(syncTheme).observe(document.body, {attributes:true, attributeFilter:['class']});
+}
+
+reset();
+requestAnimationFrame(frame);
+if (LIVE) vsc.postMessage({type:'ready'});
+</script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+{
+  "name": "agent-process-tracker",
+  "displayName": "Agent Process Tracker",
+  "description": "Live view of Claude Code agents and subagents: who delegated what, what each one is doing, what it is waiting on, and what it reported back.",
+  "version": "0.1.0",
+  "publisher": "dcel",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/doyeonryu/agent-process-tracker.git"
+  },
+  "homepage": "https://github.com/doyeonryu/agent-process-tracker#readme",
+  "bugs": {
+    "url": "https://github.com/doyeonryu/agent-process-tracker/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "agents",
+    "subagents",
+    "monitoring"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onUri"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentTracker.open",
+        "title": "Open",
+        "category": "Agent Tracker",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "agentTracker.pickSession",
+        "title": "Pick Session…",
+        "category": "Agent Tracker"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "agentTracker.open",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a"
+      }
+    ],
+    "configuration": {
+      "title": "Agent Tracker",
+      "properties": {
+        "agentTracker.staleSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 5,
+          "description": "Warn when a working agent shows no activity for this many seconds."
+        },
+        "agentTracker.approvalHintSeconds": {
+          "type": "number",
+          "default": 8,
+          "minimum": 2,
+          "description": "A permission-gated tool (Bash, Edit, Write, …) with no result after this many seconds is shown as \"running or awaiting approval\"."
+        },
+        "agentTracker.claudeConfigDir": {
+          "type": "string",
+          "default": "",
+          "description": "Claude Code config folder (default: $CLAUDE_CONFIG_DIR or ~/.claude). Transcripts are read from <folder>/projects."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "package": "npx --yes @vscode/vsce package"
+  }
+}
