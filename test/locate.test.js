@@ -4,7 +4,24 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {encodeCwd, findProjectDir, listSessions} = require('../src/locate');
+const {encodeCwd, toWslPath, candidateNames, findProjectDir, listSessions} = require('../src/locate');
+
+test('Windows workspace maps to the WSL folder name too', () => {
+  assert.equal(toWslPath('e:\\DCEL\\agent-process-tracker'), '/mnt/e/DCEL/agent-process-tracker');
+  assert.equal(toWslPath('C:\\'), '/mnt/c');
+  assert.equal(toWslPath('/home/me/x'), null);
+  assert.deepEqual(candidateNames('E:\\DCEL\\agent-process-tracker'),
+    ['e--dcel-agent-process-tracker', '-mnt-e-dcel-agent-process-tracker']);
+});
+
+test('finds a WSL-style transcript folder for a Windows workspace', async () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'apt-'));
+  const dir = path.join(cfg, 'projects', '-mnt-e-DCEL-agent-process-tracker');
+  fs.mkdirSync(dir, {recursive:true});
+  fs.writeFileSync(path.join(dir, 's.jsonl'), '{}\n');
+  assert.equal(await findProjectDir('e:\\DCEL\\agent-process-tracker', cfg), dir);
+  fs.rmSync(cfg, {recursive:true, force:true});
+});
 
 test('encodeCwd matches Claude Code folder naming', () => {
   assert.equal(encodeCwd('e:\\DCEL\\agent-process-tracker'), 'e--DCEL-agent-process-tracker');

@@ -2,7 +2,7 @@
   "name": "agent-process-tracker",
   "displayName": "Agent Process Tracker",
   "description": "Live view of Claude Code agents and subagents: who delegated what, what each one is doing, what it is waiting on, and what it reported back.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "dcel",
   "license": "MIT",
   "repository": {

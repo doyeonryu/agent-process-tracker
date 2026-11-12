@@ -3,6 +3,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const os = require('os');
+const {execFile} = require('child_process');
 
 /** ~/.claude/projects (honours CLAUDE_CONFIG_DIR and an explicit override) */
 function projectsRoot(override){
@@ -13,6 +14,63 @@ function projectsRoot(override){
 
 /** Claude Code stores each working directory under its path with every non-alphanumeric char replaced by '-' */
 const encodeCwd = p => p.replace(/[^a-zA-Z0-9]/g, '-');
+
+/** e:\DCEL\foo -> /mnt/e/DCEL/foo (how the same folder looks to Claude Code running inside WSL) */
+function toWslPath(winPath){
+  const m = /^([a-zA-Z]):[\\/]?(.*)$/.exec(winPath);
+  if (!m) return null;
+  return `/mnt/${m[1].toLowerCase()}/${m[2].replace(/\\/g, '/')}`.replace(/\/+$/, '');
+}
+
+/** folder names a workspace may be stored under (Windows-native and WSL) */
+function candidateNames(workspacePath){
+  const names = [encodeCwd(workspacePath)];
+  const w = process.platform === 'win32' || /^[a-zA-Z]:[\\/]/.test(workspacePath) ? toWslPath(workspacePath) : null;
+  if (w) names.push(encodeCwd(w));
+  return names.map(n => n.toLowerCase());
+}
+
+/* ---------- WSL discovery (Windows only) ---------- */
+let wslCache = null, wslCacheAt = 0;
+
+function wslDistros(){
+  return new Promise(resolve => {
+    execFile('wsl.exe', ['-l', '-q'], {encoding:'buffer', timeout:4000, windowsHide:true}, (err, stdout) => {
+      if (err || !stdout) return resolve([]);
+      // wsl.exe prints UTF-16LE
+      const text = stdout.toString(stdout.includes(0) ? 'utf16le' : 'utf8').replace(/\uFEFF|\0/g, '');
+      resolve(text.split(/\r?\n/).map(s => s.trim()).filter(Boolean));
+    });
+  });
+}
+
+/** \\wsl.localhost\<distro>\home\<user>\.claude\projects for every distro/user that has one */
+async function wslRoots(){
+  if (process.platform !== 'win32') return [];
+  if (wslCache && Date.now() - wslCacheAt < 60000) return wslCache;
+  const roots = [];
+  for (const d of await wslDistros()){
+    for (const share of ['\\\\wsl.localhost\\', '\\\\wsl$\\']){
+      const base = share + d;
+      let homes;
+      try { homes = (await fsp.readdir(path.join(base, 'home'))).map(u => path.join(base, 'home', u)); } catch { continue; }
+      homes.push(path.join(base, 'root'));
+      for (const h of homes){
+        const p = path.join(h, '.claude', 'projects');
+        try { if ((await fsp.stat(p)).isDirectory()) roots.push({root:p, label:`WSL: ${d}`}); } catch { /* none */ }
+      }
+      break;   // first share that works is enough
+    }
+  }
+  wslCache = roots; wslCacheAt = Date.now();
+  return roots;
+}
+
+/** every transcript root to search, Windows-native first */
+async function allRoots(override){
+  if (override) return [{root:projectsRoot(override), label:'custom'}];
+  return [{root:projectsRoot(), label:'local'}, ...await wslRoots()];
+}
 
 async function readHead(file, bytes){
   const fh = await fsp.open(file, 'r');
@@ -33,28 +91,47 @@ async function readTail(file, bytes){
   } finally { await fh.close(); }
 }
 
-/** Find the transcript folder for a workspace path. */
-async function findProjectDir(workspacePath, rootOverride){
-  const root = projectsRoot(rootOverride);
-  let dirs;
-  try { dirs = await fsp.readdir(root, {withFileTypes:true}); } catch { return null; }
-  dirs = dirs.filter(d => d.isDirectory()).map(d => d.name);
-  const want = encodeCwd(workspacePath).toLowerCase();
-  const hit = dirs.find(d => d.toLowerCase() === want);
-  if (hit) return path.join(root, hit);
+async function subdirs(root){
+  try { return (await fsp.readdir(root, {withFileTypes:true})).filter(d => d.isDirectory()).map(d => d.name); }
+  catch { return []; }
+}
 
-  // fallback: long or unusual paths — match the recorded cwd of the newest session
-  const norm = p => path.resolve(p).toLowerCase();
-  for (const d of dirs){
-    const sessions = await listSessions(path.join(root, d), {titles:false, limit:1});
-    if (!sessions.length) continue;
-    try {
-      const head = await readHead(sessions[0].file, 64 * 1024);
-      const m = head.match(/"cwd":"((?:[^"\\]|\\.)*)"/);
-      if (m && norm(JSON.parse(`"${m[1]}"`)) === norm(workspacePath)) return path.join(root, d);
-    } catch { /* unreadable — skip */ }
+/**
+ * Find the transcript folder for a workspace path.
+ * When the workspace has sessions in several places (Windows and WSL), the most recently active one wins.
+ * @returns {Promise<string|null>}
+ */
+async function findProjectDir(workspacePath, override){
+  const found = await findProjectDirs(workspacePath, override);
+  return found.length ? found[0].dir : null;
+}
+
+/** All matches, newest activity first: [{dir, label, mtime}] */
+async function findProjectDirs(workspacePath, override){
+  const want = candidateNames(workspacePath);
+  const hits = [];
+  for (const {root, label} of await allRoots(override)){
+    for (const d of await subdirs(root)) if (want.includes(d.toLowerCase())) hits.push({dir:path.join(root, d), label});
   }
-  return null;
+  if (!hits.length){
+    // fallback: long or unusual paths — match the recorded cwd of each folder's newest session
+    const norm = p => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    const targets = [norm(path.resolve(workspacePath))];
+    const w = toWslPath(workspacePath); if (w) targets.push(norm(w));
+    for (const {root, label} of await allRoots(override)) for (const d of await subdirs(root)){
+      const sessions = await listSessions(path.join(root, d), {titles:false, limit:1});
+      if (!sessions.length) continue;
+      try {
+        const m = (await readHead(sessions[0].file, 64 * 1024)).match(/"cwd":"((?:[^"\\]|\\.)*)"/);
+        if (m && targets.includes(norm(JSON.parse(`"${m[1]}"`)))) hits.push({dir:path.join(root, d), label});
+      } catch { /* unreadable — skip */ }
+    }
+  }
+  for (const h of hits){
+    const s = await listSessions(h.dir, {titles:false, limit:1});
+    h.mtime = s.length ? s[0].mtime : 0;
+  }
+  return hits.sort((a, b) => b.mtime - a.mtime);
 }
 
 function titleFrom(text){
@@ -90,17 +167,14 @@ async function listSessions(dir, {titles = true, limit = 30} = {}){
   return top;
 }
 
-/** All project folders (for workspaces without a match). */
-async function listProjects(rootOverride){
-  const root = projectsRoot(rootOverride);
-  let dirs;
-  try { dirs = await fsp.readdir(root, {withFileTypes:true}); } catch { return []; }
+/** All project folders across every root (for workspaces without a match). */
+async function listProjects(override){
   const out = [];
-  for (const d of dirs) if (d.isDirectory()){
-    const s = await listSessions(path.join(root, d.name), {titles:false, limit:1});
-    if (s.length) out.push({name:d.name, dir:path.join(root, d.name), mtime:s[0].mtime});
+  for (const {root, label} of await allRoots(override)) for (const d of await subdirs(root)){
+    const s = await listSessions(path.join(root, d), {titles:false, limit:1});
+    if (s.length) out.push({name:d, label, dir:path.join(root, d), mtime:s[0].mtime});
   }
   return out.sort((a, b) => b.mtime - a.mtime);
 }
 
-module.exports = {projectsRoot, encodeCwd, findProjectDir, listSessions, listProjects};
+module.exports = {projectsRoot, encodeCwd, toWslPath, candidateNames, wslRoots, findProjectDir, findProjectDirs, listSessions, listProjects};

@@ -245,6 +245,8 @@ body:not(.live) .live-only{display:none !important}
 .tl .now{font-weight:600}
 .tl .now::before{background:var(--claude);animation:blink 1s infinite}
 .tl .lbl{color:var(--muted);margin-right:4px}
+.linkbtn{border:none;background:none;padding:2px 0 4px;color:var(--k-msg);cursor:pointer;font-size:12px;font-weight:600}
+.linkbtn:hover{background:none;text-decoration:underline}
 details.info{border-top:1px solid var(--border);padding-top:10px}
 details.info summary{cursor:pointer;color:var(--muted);font-size:12px;margin-bottom:8px}
 @media (max-width:700px){
@@ -735,7 +737,9 @@ $('btnCollapse').onclick = () => { collapseDone = !collapseDone; $('btnCollapse'
 
 /* ---------- detail panel ---------- */
 function select(id){
-  const prev = nodes.get(selected); selected = nodes.has(id) ? id : null;
+  const prev = nodes.get(selected);
+  if (id !== selected) procOpen = false;          // each agent opens with Process collapsed
+  selected = nodes.has(id) ? id : null;
   if (prev) updateCard(prev);
   const n = nodes.get(selected);
   if (n){ updateCard(n); renderDetail(); detail.classList.add('open'); } else detail.classList.remove('open');
@@ -748,9 +752,11 @@ function select(id){
   }
   if (first) first.scrollIntoView({block:'nearest', behavior:'smooth'});
 }
-let detailsOpen = false;
+let detailsOpen = false, procOpen = false;
+const PROC_COLLAPSED = 3;
 detail.addEventListener('toggle', e => { if (e.target.matches('details.info')) detailsOpen = e.target.open; }, true);
 detail.addEventListener('click', e => {
+  if (e.target.closest('#procToggle')){ procOpen = !procOpen; renderDetail(); return; }
   const a = e.target.closest('.who'); if (a) select(a.dataset.id);
   if (e.target.id === 'dClose') select(null);
 });
@@ -803,9 +809,15 @@ function renderDetail(){
   }
   items.sort((a, b) => a.t - b.t);
   const totalSteps = items.length;
-  if (items.length > 300) items.splice(0, items.length - 300);   // long sessions: keep the latest steps
+  // collapsed by default: only the latest few steps, so the Result stays in view
+  const keep = procOpen ? 300 : PROC_COLLAPSED;
+  const hiddenN = Math.max(0, items.length - keep);
+  if (hiddenN) items.splice(0, hiddenN);
   if (isActive(n)) items.push({t:T - n.start, cls:'now', html:'Now · ' + statusLine(n).replace(/<[^>]+>/g, ' ').trim()});
-  const tl = (totalSteps > 300 ? `<div class="note">${totalSteps - 300} earlier steps not shown</div>` : '') +
+  const toggle = procOpen && totalSteps > PROC_COLLAPSED
+    ? `<button class="linkbtn" id="procToggle">▴ Collapse</button>`
+    : hiddenN ? `<button class="linkbtn" id="procToggle">▸ Show ${hiddenN} earlier step${hiddenN > 1 ? 's' : ''}</button>` : '';
+  const tl = toggle + (procOpen && hiddenN ? `<div class="note">${hiddenN} oldest steps not shown</div>` : '') +
     (items.length ? '<ul class="tl">' + items.map(i => `<li class="${i.cls}"><em>${fmt(i.t)}</em><span>${i.html}</span></li>`).join('') + '</ul>'
                           : '<div class="note">No activity yet</div>');
 
@@ -826,7 +838,7 @@ function renderDetail(){
          <div class="note">${p ? `Part of ${whoLink(p.id)}'s task · ${esc(p.desc)}` : 'Requested directly by User'}</div>
        </div>
        <div class="step s-proc"><span class="num">3</span>
-         <h4>Process <small>${items.length} steps</small></h4>
+         <h4>Process <small>${totalSteps} step${totalSteps === 1 ? '' : 's'}</small></h4>
          ${tl}
        </div>
        <div class="step s-res${resCls}"><span class="num">4</span>
@@ -979,7 +991,8 @@ function renderSessions(m){
   if (m.current) sel.value = m.current;
   $('btnFollow').classList.toggle('on', !!m.follow);
   const cur = m.sessions.find(s => s.id === m.current);
-  if (cur) $('sessChip').lastChild.textContent = 'Claude · ' + short(cur.title || cur.id, 40);
+  const src = m.source && m.source !== 'local' ? ` (${m.source})` : '';
+  if (cur) $('sessChip').lastChild.textContent = `Claude${src} · ` + short(cur.title || cur.id, 40);
 }
 if (LIVE){
   $('emptyTxt').textContent = 'Looking for Claude Code sessions in this workspace…';

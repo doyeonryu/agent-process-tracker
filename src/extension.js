@@ -3,7 +3,7 @@ const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const {findProjectDir, listSessions, listProjects} = require('./locate');
+const {findProjectDirs, listSessions, listProjects} = require('./locate');
 const {SessionTail} = require('./tail');
 
 let panel = null;   // one tracker per VS Code window
@@ -86,12 +86,17 @@ class TrackerPanel {
     }
   }
 
+  /** Windows-native and WSL transcripts are both searched; the most recently active location wins. */
   async locateProject(){
     const override = cfg().get('claudeConfigDir') || undefined;
     const folders = vscode.workspace.workspaceFolders || [];
     for (const f of folders){
-      const dir = await findProjectDir(f.uri.fsPath, override);
-      if (dir){ this.projectDir = dir; this.workspaceName = f.name; return; }
+      const [hit] = await findProjectDirs(f.uri.fsPath, override);
+      if (hit){
+        if (hit.dir !== this.projectDir){ this.projectDir = hit.dir; this.sessionId = null; this.sessions = []; }
+        this.sourceLabel = hit.label; this.workspaceName = f.name;
+        return;
+      }
     }
     this.projectDir = null;
     this.workspaceName = folders[0] ? folders[0].name : null;
@@ -99,6 +104,9 @@ class TrackerPanel {
 
   async refreshSessions(force = false){
     if (!this.ready) return;
+    // with "Follow latest" on, re-check every ~30s whether the workspace moved between Windows and WSL
+    this.refreshCount = (this.refreshCount || 0) + 1;
+    if (this.projectDir && this.follow && this.refreshCount % 10 === 0) await this.locateProject();
     if (!this.projectDir){
       await this.locateProject();
       if (!this.projectDir){
@@ -112,7 +120,7 @@ class TrackerPanel {
     const list = await listSessions(this.projectDir);
     const changed = JSON.stringify(list.map(s => [s.id, s.title])) !== JSON.stringify(this.sessions.map(s => [s.id, s.title]));
     this.sessions = list;
-    if (changed || force) this.post({type:'sessions', current:this.sessionId, follow:this.follow,
+    if (changed || force) this.post({type:'sessions', current:this.sessionId, follow:this.follow, source:this.sourceLabel,
       sessions:list.map(s => ({id:s.id, title:s.title || s.id.slice(0, 8), mtime:s.mtime}))});
     if (!list.length) return;
     const newest = list[0];
@@ -124,7 +132,7 @@ class TrackerPanel {
     if (this.tail) this.tail.stop();
     this.sessionId = id;
     const s = this.sessions.find(x => x.id === id);
-    this.post({type:'sessions', current:id, follow:this.follow,
+    this.post({type:'sessions', current:id, follow:this.follow, source:this.sourceLabel,
       sessions:this.sessions.map(x => ({id:x.id, title:x.title || x.id.slice(0, 8), mtime:x.mtime}))});
     let first = true;
     const tail = new SessionTail(this.projectDir, id, (events, {replay}) => {
@@ -152,10 +160,10 @@ class TrackerPanel {
   async pickProject(){
     const projects = await listProjects(cfg().get('claudeConfigDir') || undefined);
     const pick = await vscode.window.showQuickPick(projects.map(p => ({
-      label:p.name, description:new Date(p.mtime).toLocaleString(), dir:p.dir,
+      label:p.name, description:`${p.label} · ${new Date(p.mtime).toLocaleString()}`, dir:p.dir, source:p.label,
     })), {placeHolder:'Claude Code project to track'});
     if (!pick) return;
-    this.projectDir = pick.dir; this.sessionId = null; this.follow = true;
+    this.projectDir = pick.dir; this.sourceLabel = pick.source; this.sessionId = null; this.follow = true;
     await this.refreshSessions(true);
   }
 

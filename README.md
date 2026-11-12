@@ -38,6 +38,11 @@ The panel opens beside your editor and follows the newest Claude Code session fo
 | click a log row | expand the full text and its source |
 | `Esc` | clear selection |
 
+### WSL
+
+- **Windows VS Code window, Claude Code running in a WSL terminal**: this works out of the box. The extension also searches every WSL distro's `~/.claude/projects` (through `\\wsl.localhost\…`) and matches `e:\work\app` to the `/mnt/e/work/app` folder that Claude Code uses there.
+- **VS Code connected to WSL** (`WSL: <distro>` in the bottom-left corner): in the Extensions view, click **Install in WSL** on Agent Tracker once.
+
 ### Optional: a `/tracker` slash command in Claude Code
 
 Save this as `~/.claude/commands/tracker.md`:
