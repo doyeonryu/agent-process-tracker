@@ -105,6 +105,8 @@ npm run package        # @vscode/vsce로 .vsix 빌드
 
 이 폴더를 VS Code로 열고 `F5`를 누르면 확장 개발용 VS Code 창(Extension Development Host)이 실행됩니다.
 
+**릴리스 방법:** `package.json`의 `version`을 올리고 `CHANGELOG.md`에 `## x.y.z` 항목을 추가한 뒤 `vx.y.z` 태그를 push합니다. GitHub Actions가 테스트를 돌리고 `.vsix`를 빌드한 다음, 해당 CHANGELOG 내용으로 Release를 만들어 줍니다.
+
 **실제 로그는 절대 커밋하지 마세요.** 대화 내용이 그대로 들어 있습니다. 테스트에는 직접 만든 가짜 데이터만 사용합니다.
 
 ## 로드맵

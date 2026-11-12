@@ -105,6 +105,8 @@ npm run package        # builds the .vsix with @vscode/vsce
 
 Press `F5` in VS Code with this folder open to run an Extension Development Host.
 
+**Releasing:** bump `version` in `package.json`, add a `## x.y.z` section to `CHANGELOG.md`, then push a tag `vx.y.z`. GitHub Actions runs the tests, builds the `.vsix`, and publishes the release with that changelog section.
+
 **Never commit real transcripts.** They contain your conversations. Tests use synthetic lines only.
 
 ## Roadmap
