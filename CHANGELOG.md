@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Publisher/author is now `doyeonryu` (extension id `doyeonryu.agent-process-tracker`; open URI `vscode://doyeonryu.agent-process-tracker/open`).
+- Extension icon.
+- Fixed garbled characters in README.md.
+
 ## 0.1.2
 
 - Tracker button in the editor title bar (next to other AI tools' buttons) opens the panel with one click.
